@@ -82,26 +82,15 @@ const generateContentWithAI = async (day, theme, contentType) => {
     });
 
     if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error || 'Failed to generate content');
+      throw new Error('Failed to generate content');
     }
 
-     const data = await response.json();
+    // Backend now returns clean JSON directly
+    const data = await response.json();
+    console.log('Received from backend:', data);
     
-    // Parse the Claude API response
-    const text = data.content[0].text;
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    return data;
     
-    if (jsonMatch) {
-      return JSON.parse(jsonMatch[0]);
-    } else {
-      return {
-        hook: text.substring(0, 100),
-        caption: text,
-        visual: `${contentType.type} showcasing FocusFlow Planner`,
-        hashtags: '#FocusFlow #StudyTok #ProductivityPlanner'
-      };
-    }
   } catch (error) {
     console.error('AI Generation Error:', error);
     // Fallback to demo content

@@ -14,22 +14,9 @@ app.post('/api/generate-content', async (req, res) => {
 // ensure .env was loaded and provide helpful debug if key missing
 let apiKey = process.env.ANTHROPIC_API_KEY;
 if (!apiKey) {
-    const result = dotenv.config();
-    if (result.error) {
-        console.error('Failed to load .env:', result.error);
-    } else {
-        console.error('.env loaded but ANTHROPIC_API_KEY not found. .env keys:', Object.keys(result.parsed || {}));
-    }
-    // show any process.env keys that might match for extra debugging
-    const matches = Object.keys(process.env).filter(k => k.toUpperCase().includes('ANTHROPIC'));
-    if (matches.length) console.error('Matching process.env keys:', matches);
-    apiKey = process.env.ANTHROPIC_API_KEY; // re-read after attempting to load
+  console.error('ANTHROPIC_API_KEY not found in process.env');
+  return res.status(500).json({ error: "API key missing" });
 }
-
-  if (!apiKey) {
-    return res.status(500).json({ error: "API key missing" });
-  }
-
   const prompt = `You are a Gen Z social media marketing expert. Create promotional content for "FocusFlow Planner" - a digital planner for students.
 
 Product Details:
@@ -50,7 +37,7 @@ Generate:
 
 Style: Motivational, aesthetic, minimalist, Gen Z-friendly, use lots of emojis ✨
 
-Format your response as JSON:
+IMPORTANT: Return ONLY valid JSON with no markdown formatting or extra text. Format:
 {
   "hook": "...",
   "caption": "...",
@@ -72,13 +59,72 @@ Format your response as JSON:
         messages: [{ role: "user", content: prompt }],
       }),
     });
+    if (!response.ok) {
+      throw new Error(`Claude API error: ${response.status}`);
+    }
 
     const data = await response.json();
-
-    return res.json(data);
+    console.log('Raw Claude response:', JSON.stringify(data, null, 2));
+  
+    // Extract the text from Claude's response
+    const text = data.content[0].text;
+    
+    // Try to extract JSON from the response
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    
+    if (jsonMatch) {
+      try {
+        // Clean up the JSON string
+        let jsonString = jsonMatch[0];
+        
+        // Remove trailing commas
+        jsonString = jsonString.replace(/,(\s*[}\]])/g, '$1');
+        
+        // Parse the cleaned JSON
+        const parsed = JSON.parse(jsonString);
+        
+        // Ensure all required fields exist
+        const result = {
+          hook: parsed.hook || `${theme} with FocusFlow ✨`,
+          caption: parsed.caption || "Get FocusFlow Planner today!",
+          visual: parsed.visual || `${contentType.type} showcasing FocusFlow Planner`,
+          hashtags: parsed.hashtags || "#FocusFlow #StudyTok #ProductivityPlanner"
+        };
+        
+        console.log('Parsed result:', result);
+        return res.json(result);
+        
+      } catch (parseError) {
+        console.error('JSON Parse Error:', parseError);
+        console.error('Failed JSON:', jsonMatch[0]);
+        
+        // Return fallback content
+        return res.json({
+          hook: `${theme} with FocusFlow ✨`,
+          caption: text.substring(0, 500),
+          visual: `${contentType.type} showcasing FocusFlow Planner`,
+          hashtags: "#FocusFlow #StudyTok #ProductivityPlanner"
+        });
+      }
+    }
+    
+    // If no JSON found, return fallback
+    return res.json({
+      hook: `${theme} with FocusFlow ✨`,
+      caption: text,
+      visual: `${contentType.type} showcasing FocusFlow Planner`,
+      hashtags: "#FocusFlow #StudyTok #ProductivityPlanner"
+    });
+    
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('API Error:', err);
+    return res.status(500).json({ 
+      error: err.message,
+      hook: `${theme} with FocusFlow ✨`,
+      caption: "Get FocusFlow Planner today!",
+      visual: `${contentType.type} showcasing FocusFlow Planner`,
+      hashtags: "#FocusFlow #StudyTok #ProductivityPlanner"
+    });
   }
 });
-
 app.listen(3001, () => console.log("Server running on http://localhost:3001"));
